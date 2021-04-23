@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Neo.IO.Json;
+using System;
 
 namespace Neo.UnitTests.IO.Json
 {
@@ -86,6 +87,105 @@ namespace Neo.UnitTests.IO.Json
             //Assert.AreEqual(@"[1,2]", json.JsonPath("$..book[?(@.author =~ /.*REES/i)]").ToString());
             //Assert.AreEqual(@"[1,2]", json.JsonPath("$..*").ToString());
             //Assert.AreEqual(@"[1,2]", json.JsonPath("$..book.length()").ToString());
+        }
+
+        [TestMethod]
+        public void TestJSONPathIndex()
+        {
+            var obj = JObject.Parse("[\"a\",\"b\",\"c\",\"d\"]");
+            
+            Assert.AreEqual("[\"a\"]", obj.JsonPath("$[0]").ToString());
+            Assert.AreEqual("[\"d\"]", obj.JsonPath("$[3]").ToString());
+            Assert.AreEqual("[\"b\"]", obj.JsonPath("$[1:2]").ToString());
+            Assert.AreEqual("[\"b\",\"c\"]", obj.JsonPath("$[1:-1]").ToString());
+            Assert.AreEqual("[\"b\",\"c\"]", obj.JsonPath("$[-3:-1]").ToString());
+            Assert.AreEqual("[\"b\",\"c\"]", obj.JsonPath("$[-3:3]").ToString());
+            Assert.AreEqual("[\"a\",\"b\",\"c\"]", obj.JsonPath("$[:3]").ToString());
+            Assert.AreEqual("[\"a\",\"b\",\"c\",\"d\"]", obj.JsonPath("$[:100]").ToString());
+            Assert.AreEqual("[\"b\",\"c\",\"d\"]", obj.JsonPath("$[1:]").ToString());
+
+            obj = JObject.Parse("[[1,2],{\"1\":\"4\"},[5,6]]");
+            Assert.AreEqual("[2,6]", obj.JsonPath("$[:][1]").ToString());
+            Assert.AreEqual("[1,2,\"4\",5,6]", obj.JsonPath("$[*].*").ToString());
+
+            obj = JObject.Parse("[[1,2],3,{\"1\":\"4\"},[5,6]]");
+            Assert.AreEqual("[2,6]", obj.JsonPath("$[*][1:]").ToString());
+        }
+
+        [TestMethod]
+        public void TestJSONPathIdent()
+        {
+            var obj = JObject.Parse(@"{
+		        ""store"": {
+                    ""name"": ""big"",
+                    ""sub"": [
+                        { ""name"": ""sub1"" },
+			            { ""name"": ""sub2"" }
+                    ],
+                    ""partner"": { ""name"": ""ppp"" }
+		        },
+                ""another"": { ""name"": ""small"" }
+	        }");
+            
+            Assert.AreEqual("[\"big\"]", obj.JsonPath("$.store.name").ToString());
+            Assert.AreEqual("[\"big\"]", obj.JsonPath("$['store']['name']").ToString());
+
+            // map key order
+            //Assert.AreEqual("[\"small\",\"big\"]", obj.JsonPath("$[*].name").ToString());
+            //Assert.AreEqual("[\"small\",\"big\"]", obj.JsonPath("$.*.name").ToString());
+
+            Assert.AreEqual("[\"big\"]", obj.JsonPath("$..store.name").ToString());
+            //Assert.AreEqual("[\"big\",\"ppp\",\"sub1\",\"sub2\"]", obj.JsonPath("$.store..name").ToString());
+            Assert.AreEqual("[\"sub1\",\"sub2\"]", obj.JsonPath("$..sub[*].name").ToString());
+            Assert.AreEqual("[\"ppp\",\"sub1\",\"sub2\"]", obj.JsonPath("$.store..*.name").ToString());
+            Assert.AreEqual("[]", obj.JsonPath("$..sub.name").ToString());
+            //Assert.AreEqual("[\"sub1\",\"sub2\"]", obj.JsonPath("$..sub..name").ToString());
+        }
+
+         [TestMethod]
+        public void TestJSONPathUnion()
+        {
+            var obj = JObject.Parse(@"[""a"",{""x"":1,""y"":2,""z"":3},""c"",""d""]");
+            
+            Assert.AreEqual(@"[""a"",""c""]", obj.JsonPath("$[0,2]").ToString());
+            Assert.AreEqual("[1,3]", obj.JsonPath("$[1]['x','z']").ToString());
+        }
+
+        [TestMethod]
+        public void TestJSONPathInvalid()
+        {
+            var obj = new JObject();
+            string bigNum = int.MaxValue.ToString() + "1";
+
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("."));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$1"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("&"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$&"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$.&"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$.[0]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$..&"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$..1"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[&]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[**]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[1&]"));
+            Assert.ThrowsException<OverflowException>(() => obj.JsonPath("$[" + bigNum + "]"));
+            Assert.ThrowsException<OverflowException>(() => obj.JsonPath("$[" + bigNum + ":]"));
+            Assert.ThrowsException<OverflowException>(() => obj.JsonPath("$[:" + bigNum + "]"));
+            Assert.ThrowsException<OverflowException>(() => obj.JsonPath("$[1," + bigNum + "]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[" + bigNum + "[]]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$['a'&]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$['a'1]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$['a"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$['\\u123']"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$['s','\\u123']"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[[]]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[1,'a']"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[1,1&"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[1,1[]]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[1:&]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[1:1[]]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[1:[]]"));
+            Assert.ThrowsException<FormatException>(() => obj.JsonPath("$[1:[]]"));
         }
     }
 }
